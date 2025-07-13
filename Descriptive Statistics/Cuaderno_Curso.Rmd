@@ -1,0 +1,225 @@
+---
+title: "Estadistica multivariante avanzada"
+author: "Juan José Echeverry"
+output: 
+  html_notebook:
+    toc: true          # Activa tabla de contenido
+    toc_depth: 3       # Profundidad de la TOC (por defecto es 3)
+    toc_float: true    # Tabla de contenido flotante
+    #number_sections: true  # Numera secciones
+    fig_width: 7       # Ancho predeterminado de figuras (en pulgadas)
+    fig_height: 5      # Alto predeterminado de figuras (en pulgadas)
+    #theme: united      # Tema visual de Bootstrap (opcional)
+    highlight: tango    # Tema de resaltado de código
+---
+
+El presente cuaderno resume los temas vistos en el [curso](https://github.com/joanby/curso-estadistica-multivariante) de estadística tumultuariamente de R y Python
+
+# 1) Espacio multivariante
+
+![](images/clipboard-2129235464.png)
+
+La estadística multivariante sirve para analizar simultáneamente múltiples variables con el fin de entender las relaciones que existen entre ellas y cómo estas influyen en fenómenos complejos. Es especialmente útil cuando los datos contienen muchos atributos interrelacionados, ya que permite identificar patrones, reducir dimensiones, clasificar observaciones, agrupar elementos similares o predecir resultados. Se aplica en diversas áreas como el marketing, la economía, la biología o las ciencias sociales, donde los fenómenos no pueden explicarse adecuadamente con una sola variable, y se requiere una visión integral y estructurada de los datos.
+
+![](images/clipboard-1783975655.png)
+
+Los métodos de la estadística multivariante suelen agruparse en dos grandes enfoques: la minería de datos y la estadística inferencial. La **minería de datos** se enfoca en descubrir patrones, relaciones ocultas o estructuras dentro de grandes volúmenes de datos, muchas veces sin una hipótesis previa; es más exploratoria y se basa en algoritmos como los árboles de decisión, redes neuronales o métodos de clustering. Por otro lado, la **estadística inferencial** parte de un marco teórico más riguroso y busca hacer generalizaciones sobre una población a partir de una muestra, usando modelos que permiten estimar parámetros, contrastar hipótesis y establecer relaciones causales, como la regresión multivariante o el análisis discriminante. Ambos enfoques son complementarios y permiten obtener una visión más completa y robusta del fenómeno estudiado.
+
+![](images/clipboard-1528658378.png)
+
+Análisis con "Bagplot"
+
+![](images/clipboard-2542243315.png)
+
+## 1.1) Ejemplo con datos departamentales de USA
+
+**Primero**, cargamos librerías y data set
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(GGally)
+library(plotly)
+library(MASS)
+library(ddalpha)
+library(scatterplot3d)
+library(tibble)
+
+# Dataset
+X <- as.data.frame(state.x77)
+glimpse(X)
+
+n.X <- nrow(X)
+p.X <- ncol(X)
+
+```
+
+**Segundo**, hacemos una visualización de datos
+
+Graficamos boxplot por variable
+
+```{r}
+X_long <- X %>% 
+  rownames_to_column("State") %>%
+  pivot_longer(-State, names_to = "Variable", values_to = "Value")
+
+ggplot(X_long, aes(x = Variable, y = Value)) +
+  geom_boxplot(fill = "skyblue") +
+  theme_minimal() +
+  labs(title = "Boxplots por variable")
+
+```
+
+Histogramas de la variable "Murder" con diferentes binwidths
+
+```{r message=FALSE, warning=FALSE}
+binwidths <- c(1, 2, 3)
+plots <- lapply(binwidths, function(bw) {
+  ggplot(X, aes(x = Murder)) +
+    geom_histogram(binwidth = bw, fill = "blue", alpha = 0.6, color = "black") +
+    labs(title = paste("Murder con binwidth =", bw))
+})
+library(patchwork)
+wrap_plots(plots)
+
+```
+
+Histogramas de todas las variables (Sturges)
+
+```{r message=FALSE, warning=FALSE}
+X_long %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "blue", color = "white") +
+  facet_wrap(~Variable, scales = "free") +
+  theme_minimal()
+
+```
+
+Densidades kernel por variable
+
+```{r}
+X_long %>%
+  ggplot(aes(x = Value)) +
+  geom_density(fill = "blue", alpha = 0.4) +
+  facet_wrap(~Variable, scales = "free") +
+  labs(title = "Densidad kernel por variable") +
+  theme_minimal()
+
+```
+
+Comparación de kernel Gaussiano vs Epanechnikov
+
+```{r fig.height=12, fig.width=12, message=FALSE, warning=FALSE}
+plot_list <- lapply(unique(X_long$Variable), function(var){
+  ggplot(filter(X_long, Variable == var), aes(x = Value)) +
+    geom_density(kernel = "gaussian", color = "blue", fill = "blue", alpha = 0.3) +
+    geom_density(kernel = "epanechnikov", color = "green", fill = "green", alpha = 0.2) +
+    labs(title = paste("Kernel Gaussiano vs Epanechnikov:", var)) +
+    theme_minimal()
+})
+wrap_plots(plot_list)
+
+```
+
+Scatterplot Income vs Life Exp
+
+```{r}
+ggplot(X, aes(x = Income, y = `Life Exp`)) +
+  geom_point(color = "blue") +
+  labs(title = "Income vs Life Expectancy") +
+  theme_minimal()
+
+```
+
+Gráfico 3D con plotly
+
+```{r}
+plot_ly(data = X, x = ~Income, y = ~`Life Exp`, z = ~Murder, 
+        type = "scatter3d", mode = "markers",
+        marker = list(size = 5, color = "blue"))
+
+```
+
+Pairs plot (scatterplot matrix)
+
+```{r fig.height=12, fig.width=12, message=FALSE, warning=FALSE}
+GGally::ggpairs(X)
+
+```
+
+Coordenadas paralelas
+
+```{r}
+parcoord(X, col = "blue", var.label = TRUE)
+
+```
+
+**Tercero**, medidas descriptivas multivariantes
+
+Calculamos las medias
+
+```{r}
+mu.X <- colMeans(X)
+mu.X
+
+```
+
+Calculamos profundidad de Tukey
+
+```{r}
+depth.X <- depth.halfspace(X, X, num.directions = 100000, seed = 1)
+sort.depth.X <- sort(depth.X, decreasing = TRUE, index.return = TRUE)
+
+depth.X.sort <- sort.depth.X$x
+depth.X.sort.index <- sort.depth.X$ix
+
+# Estado más profundo (más central)
+X[depth.X.sort.index[1], ]
+
+```
+
+Calculamos matriz de covarianza y correlación
+
+```{r}
+S.X <- cov(X)
+R.X <- cor(X)
+
+eigen_S <- eigen(S.X)
+eigen_R <- eigen(R.X)
+
+list(
+  Covarianza = S.X,
+  Autovalores_S = eigen_S$values,
+  Autovectores_S = eigen_S$vectors,
+  Correlación = R.X,
+  Autovalores_R = eigen_R$values,
+  Autovectores_R = eigen_R$vectors,
+  Traza_S = sum(eigen_S$values),
+  Determinante_S = det(S.X),
+  Traza_R = sum(eigen_R$values),
+  Determinante_R = det(R.X)
+)
+
+```
+
+Estandarización univariante y multivariante
+
+```{r fig.height=15, fig.width=15, message=FALSE, warning=FALSE}
+# Univariante
+sX <- scale(X)
+GGally::ggpairs(as.data.frame(sX))
+
+# Multivariante (esferización)
+iS.X <- solve(S.X)
+e <- eigen(iS.X)
+V <- e$vectors
+B <- V %*% diag(sqrt(e$values)) %*% t(V)
+Xtil <- scale(X, scale = FALSE)
+SX <- Xtil %*% B
+
+colMeans(SX)
+cov(SX)
+GGally::ggpairs(as.data.frame(SX))
+
+```
